@@ -90,7 +90,7 @@ def webhook():
 
 # Auto-set webhook on startup
 if TOKEN:
-    APP_URL = os.getenv("RENDER_EXTERNAL_URL")
+    APP_URL = os.getenv("RENDER_EXTERNAL_URL", "https://telegram-bot-h9su.onrender.com")
     if APP_URL:
         webhook_url = f"{APP_URL}/webhook"
         set_webhook = f"{BASE_URL}/setWebhook?url={webhook_url}"
