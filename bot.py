@@ -1,80 +1,104 @@
-import os
 from flask import Flask, request
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import requests
+import os
+
+app = Flask(__name__)
 
 # Load environment variables
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-CHANNEL_ID = os.getenv("CHANNEL_ID")
-GROUP_ID = os.getenv("GROUP_ID")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "6952136450"))
+CHANNEL_ID = int(os.getenv("CHANNEL_ID", "-1002845832658"))
+GROUP_ID = int(os.getenv("GROUP_ID", "-1002493478840"))
 
-# Initialize Flask app
-app = Flask(__name__)
+BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 
-# Create Telegram application (no polling)
-application = Application.builder().token(TOKEN).build()
+# Helper: send message
+def send_message(chat_id, text):
+    url = f"{BASE_URL}/sendMessage"
+    requests.post(url, json={"chat_id": chat_id, "text": text})
 
-# === Commands ===
-async def start(update: Update, context):
-    if update.effective_user.id == ADMIN_ID:
-        await update.message.reply_text("Welcome Admin ✅")
+# Command handlers
+def handle_start(chat_id, user_id):
+    if user_id == ADMIN_ID:
+        send_message(chat_id, "✅ Welcome Admin! You have full access.")
     else:
-        await update.message.reply_text("Welcome to the bot!")
+        send_message(chat_id, "Hello! This is my bot running on Render.")
 
-async def ban(update: Update, context):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if not context.args:
-        await update.message.reply_text("Usage: /ban <user_id>")
-        return
-    user_id = int(context.args[0])
-    try:
-        await context.bot.ban_chat_member(chat_id=GROUP_ID, user_id=user_id)
-        await update.message.reply_text(f"User {user_id} banned.")
-    except Exception as e:
-        await update.message.reply_text(str(e))
+def handle_ban(chat_id, user_id, target_id):
+    if user_id == ADMIN_ID:
+        url = f"{BASE_URL}/banChatMember"
+        requests.post(url, json={"chat_id": chat_id, "user_id": target_id})
+        send_message(chat_id, f"🚫 User {target_id} banned.")
+    else:
+        send_message(chat_id, "❌ You are not authorized.")
 
-async def kick(update: Update, context):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if not context.args:
-        await update.message.reply_text("Usage: /kick <user_id>")
-        return
-    user_id = int(context.args[0])
-    try:
-        await context.bot.ban_chat_member(chat_id=GROUP_ID, user_id=user_id)
-        await context.bot.unban_chat_member(chat_id=GROUP_ID, user_id=user_id)
-        await update.message.reply_text(f"User {user_id} kicked.")
-    except Exception as e:
-        await update.message.reply_text(str(e))
+def handle_kick(chat_id, user_id, target_id):
+    if user_id == ADMIN_ID:
+        url = f"{BASE_URL}/kickChatMember"
+        requests.post(url, json={"chat_id": chat_id, "user_id": target_id})
+        send_message(chat_id, f"👢 User {target_id} kicked.")
+    else:
+        send_message(chat_id, "❌ You are not authorized.")
 
-async def mute(update: Update, context):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if not context.args:
-        await update.message.reply_text("Usage: /mute <user_id>")
-        return
-    user_id = int(context.args[0])
-    try:
-        await context.bot.restrict_chat_member(
-            chat_id=GROUP_ID,
-            user_id=user_id,
-            permissions={"can_send_messages": False},
-        )
-        await update.message.reply_text(f"User {user_id} muted.")
-    except Exception as e:
-        await update.message.reply_text(str(e))
+def handle_mute(chat_id, user_id, target_id):
+    if user_id == ADMIN_ID:
+        url = f"{BASE_URL}/restrictChatMember"
+        requests.post(url, json={
+            "chat_id": chat_id,
+            "user_id": target_id,
+            "permissions": {"can_send_messages": False}
+        })
+        send_message(chat_id, f"🔇 User {target_id} muted.")
+    else:
+        send_message(chat_id, "❌ You are not authorized.")
 
-# === Register Handlers ===
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("ban", ban))
-application.add_handler(CommandHandler("kick", kick))
-application.add_handler(CommandHandler("mute", mute))
-
-# === Webhook route ===
+# Flask route for Telegram
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put_nowait(update)
-    return "ok"
+    data = request.get_json()
+    if "message" in data:
+        msg = data["message"]
+        chat_id = msg["chat"]["id"]
+        user_id = msg["from"]["id"]
+        text = msg.get("text", "")
+
+        if text.startswith("/start"):
+            handle_start(chat_id, user_id)
+
+        elif text.startswith("/ban") and user_id == ADMIN_ID:
+            try:
+                target_id = int(text.split()[1])
+                handle_ban(chat_id, user_id, target_id)
+            except:
+                send_message(chat_id, "Usage: /ban <user_id>")
+
+        elif text.startswith("/kick") and user_id == ADMIN_ID:
+            try:
+                target_id = int(text.split()[1])
+                handle_kick(chat_id, user_id, target_id)
+            except:
+                send_message(chat_id, "Usage: /kick <user_id>")
+
+        elif text.startswith("/mute") and user_id == ADMIN_ID:
+            try:
+                target_id = int(text.split()[1])
+                handle_mute(chat_id, user_id, target_id)
+            except:
+                send_message(chat_id, "Usage: /mute <user_id>")
+
+    return {"ok": True}
+
+# Auto-set webhook on startup
+if TOKEN:
+    APP_URL = os.getenv("RENDER_EXTERNAL_URL")
+    if APP_URL:
+        webhook_url = f"{APP_URL}/webhook"
+        set_webhook = f"{BASE_URL}/setWebhook?url={webhook_url}"
+        try:
+            r = requests.get(set_webhook)
+            print("Webhook set:", r.json())
+        except Exception as e:
+            print("Error setting webhook:", e)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
