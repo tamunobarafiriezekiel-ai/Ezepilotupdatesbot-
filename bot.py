@@ -61,7 +61,12 @@ def handle_mute(chat_id, user_id, target_id):
     else:
         send_message(chat_id, "❌ You are not authorized.")
 
-# Flask route for Telegram
+# === Health Check Route ===
+@app.route("/", methods=["GET"])
+def health_check():
+    return {"status": "ok", "message": "Bot server is running ✅"}
+
+# === Webhook route ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json()
@@ -71,6 +76,9 @@ def webhook():
         user_id = msg["from"]["id"]
         text = msg.get("text", "")
         message_id = msg["message_id"]
+
+        # Debug log
+        print("Incoming message:", msg)
 
         # === Forward non-command messages ===
         if text and not text.startswith("/"):
