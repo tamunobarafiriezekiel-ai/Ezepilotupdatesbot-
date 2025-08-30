@@ -17,6 +17,15 @@ def send_message(chat_id, text):
     url = f"{BASE_URL}/sendMessage"
     requests.post(url, json={"chat_id": chat_id, "text": text})
 
+# Helper: forward message
+def forward_message(from_chat_id, message_id, to_chat_id):
+    url = f"{BASE_URL}/forwardMessage"
+    requests.post(url, json={
+        "chat_id": to_chat_id,
+        "from_chat_id": from_chat_id,
+        "message_id": message_id
+    })
+
 # Command handlers
 def handle_start(chat_id, user_id):
     if user_id == ADMIN_ID:
@@ -61,7 +70,14 @@ def webhook():
         chat_id = msg["chat"]["id"]
         user_id = msg["from"]["id"]
         text = msg.get("text", "")
+        message_id = msg["message_id"]
 
+        # === Forward non-command messages ===
+        if text and not text.startswith("/"):
+            forward_message(chat_id, message_id, GROUP_ID)
+            forward_message(chat_id, message_id, CHANNEL_ID)
+
+        # === Handle commands ===
         if text.startswith("/start"):
             handle_start(chat_id, user_id)
 
@@ -99,6 +115,3 @@ if TOKEN:
             print("Webhook set:", r.json())
         except Exception as e:
             print("Error setting webhook:", e)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
